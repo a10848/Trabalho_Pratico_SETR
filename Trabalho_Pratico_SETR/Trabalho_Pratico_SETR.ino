@@ -1,38 +1,44 @@
 #include <Arduino_FreeRTOS.h>
 #include <Keypad.h>
+#include <SPI.h>
+#include <RFID.h>
 
 // task
 void Task_Led(void* param);
 void Task_Blink_Led(void* param);
 void Task_Pir(void* param);
 void Task_Buzzer(void* param);
-void Task_Keyboard(void* param);
+void Task_Alarm(void* param);
 
 // handle
 TaskHandle_t Task_Led_Handle;
 TaskHandle_t Task_Blink_Led_Handle;
 TaskHandle_t Task_Pir_Handle;
 TaskHandle_t Task_Buzzer_Handle;
-TaskHandle_t Task_Keyboard_Handle;
+TaskHandle_t Task_Alarm_Handle;
 
 // pin
-#define ledBlinkRed 42
-#define ledPir 43
-#define ledMagnetic 44
-#define ledWater 45
-#define ledGas 46
-#define ledExtra 47
-#define ledRfidBlue 48
-#define ledRfidGreen 49
-#define ledRfidRed 50
-#define ledOnOffBlue 51
-#define ledOnOffGreen 52
-#define ledOnOffRed 53
+#define ledBlinkRed 32
+#define ledPir 33
+#define ledMagnetic 34
+#define ledWater 35
+#define ledGas 36
+#define ledExtra 37
+#define ledRfidBlue 38
+#define ledRfidGreen 39
+#define ledRfidRed 40
+#define ledOnOffBlue 41
+#define ledOnOffGreen 42
+#define ledOnOffRed 43
 #define buzzer 31
 #define pirA 13
 #define pirB 12
+#define sdaPin 9
+#define resetPin 8
 
 // variable
+#define countDownTime 30
+#define codeErrorAttempts 3
 bool pirSensorActive = false;
 bool magneticSensorActive = false;
 bool waterSensorActive = false;
@@ -43,8 +49,15 @@ bool blinkLedActive = false;
 bool buzzerPositive = false;
 bool buzzerNegative = false;
 bool buzzerStatus = false;
+bool loginAdmin = false;
+bool loginUserA = false;
+bool loginUserB = false;
 int alarmStatus = 0;
-int countDown = 15;
+int countDown = countDownTime;
+int codeError = codeErrorAttempts;
+
+// rfid
+RFID rfid522(sdaPin, resetPin);
 
 // keyboard
 char key = NO_KEY;
@@ -56,12 +69,20 @@ byte row_pins[rows] = { 30, 28, 26, 24, 22 };
 Keypad my_key_pad = Keypad(makeKeymap(key_map), row_pins, col_pins, rows, cols);
 
 // access codes
-String codigo;
-String autenticationAdmin = "5052";
+String authenticationCode;
+String authenticationAdmin = "5052";
+String authenticationUserA = "1234";
+String authenticationUserB = "4321";
+String rfidCode;
+String rfidAdmin = "8910412177140";
+String rfidUserA = "443023322657";
+String rfidUserB = "10824477172121";
 
 void setup()
 {
 	Serial.begin(9600);
+	SPI.begin();
+	rfid522.init();
 
 	pinMode(ledBlinkRed, OUTPUT);
 	pinMode(ledPir, OUTPUT);
@@ -83,7 +104,7 @@ void setup()
 	xTaskCreate(Task_Blink_Led, "TASK_BLINK_LED", 256, NULL, 1, &Task_Blink_Led_Handle);
 	xTaskCreate(Task_Pir, "TASK_PIR", 256, NULL, 1, &Task_Pir_Handle);
 	xTaskCreate(Task_Buzzer, "TASK_BUZZER", 256, NULL, 1, &Task_Buzzer_Handle);
-	xTaskCreate(Task_Keyboard, "TASK_KEYBOARD", 2048, NULL, 1, &Task_Keyboard_Handle);
+	xTaskCreate(Task_Alarm, "TASK_ALARM", 2048, NULL, 1, &Task_Alarm_Handle);
 }
 
 void loop() {}
@@ -168,7 +189,7 @@ void Task_Buzzer(void* param) {
 			vTaskDelay(150 / portTICK_PERIOD_MS);
 
 			buzzerPositive = false;
-			countDown = 15;
+			countDown = countDownTime;
 		}
 
 		vTaskDelay(150 / portTICK_PERIOD_MS);
@@ -188,7 +209,7 @@ void Task_Blink_Led(void* param) {
 			if (blinkLed == false) {
 				blinkLed = true;
 				digitalWrite(ledBlinkRed, HIGH);
-				if (countDown > 0) {
+				if (countDown > (countDownTime - (countDownTime - 1))) {
 					countDown--;
 				}
 				else {
@@ -220,24 +241,36 @@ void Task_Pir(void* param) {
 	}
 }
 
-void Task_Keyboard(void* param) {
+void Task_Alarm(void* param) {
 	(void)param;
 
 	int i = 0;
 
 	while (1) {
+		rfidCode = "";
 		key = my_key_pad.getKey();
+
+		if (rfid522.isCard())
+		{
+			rfid522.readCardSerial();
+			Serial.println("Card detected!");
+			for (int i = 0; i < 5; i++)
+			{
+				rfidCode += rfid522.serNum[i];
+			}
+			Serial.println(rfidCode);
+		}
 
 		if (key != NO_KEY) {
 			Serial.println(key);
 		}
-		if (key == '#') {
+		if (rfidCode == rfidAdmin || rfidCode == rfidUserA || rfidCode == rfidUserB) {
 			alarmStatus = -1;
 			do {
 				key = my_key_pad.getKey();
 				if (key != NO_KEY) {
 					if (key != '#') {
-						codigo += key;
+						authenticationCode += key;
 						i++;
 						Serial.print("*");
 					}
@@ -245,12 +278,36 @@ void Task_Keyboard(void* param) {
 			} while (key != '#');
 		}
 
-		if (codigo != "") {
+		if (authenticationCode != "") {
 			Serial.println("");
-			Serial.println(codigo);
+			Serial.println(authenticationCode);
 
-			if (codigo == autenticationAdmin) {
-				Serial.println("Correto!");
+			if (rfidCode == rfidAdmin && authenticationCode == authenticationAdmin) {
+				loginAdmin = true;
+			}
+			else if (rfidCode == rfidUserA && authenticationCode == authenticationUserA) {
+				loginUserA = true;
+			}
+			else if (rfidCode == rfidUserB && authenticationCode == authenticationUserB) {
+				loginUserB = true;
+			}
+
+			if (loginAdmin == true || loginUserA == true || loginUserB == true) {
+				Serial.println("Authentication successful!");
+
+				if (loginAdmin == true) {
+					Serial.println("Welcome Admin...");
+					loginAdmin = false;
+				}
+				if (loginUserA == true) {
+					Serial.println("Welcome Xavita...");
+					loginUserA = false;
+				}
+				if (loginUserB == true) {
+					Serial.println("Welcome Guelhas...");
+					loginUserB = false;
+				}
+
 				blinkLedActive = false;
 				buzzerPositive = true;
 				buzzerNegative = false;
@@ -266,12 +323,26 @@ void Task_Keyboard(void* param) {
 					alarmStatus = 1;
 					Serial.println("Alarm activated!");
 				}
+
+				codeError = codeErrorAttempts;
 			}
 			else {
-				Serial.println("Incorreto!");
+				Serial.println("Authentication unsuccessful!");
+
+				if (onOff == true) alarmStatus = 1;
+				else alarmStatus = 0;
+
+				if (codeError > (codeErrorAttempts - (codeErrorAttempts - 1))) {
+					codeError--;
+				}
+				else {
+					buzzerNegative = true;
+					alarmStatus = 0;
+					onOff = false;
+				}
 			}
 
-			codigo = "";
+			authenticationCode = "";
 		}
 		vTaskDelay(100 / portTICK_PERIOD_MS);
 		key = NO_KEY;
