@@ -5,7 +5,7 @@
 
 // task
 void Task_Led(void* param);
-void Task_Blink_Led(void* param);
+void Task_Blink_Led_Negative(void* param);
 void Task_Pir(void* param);
 void Task_Magnet(void* param);
 void Task_Water(void* param);
@@ -15,7 +15,7 @@ void Task_Led_Water(void* param);
 
 // handle
 TaskHandle_t Task_Led_Handle;
-TaskHandle_t Task_Blink_Led_Handle;
+TaskHandle_t Task_Blink_Led_Negative_Handle;
 TaskHandle_t Task_Pir_Handle;
 TaskHandle_t Task_Magnet_Handle;
 TaskHandle_t Task_Water_Handle;
@@ -55,7 +55,7 @@ bool waterSensorActive = false;
 bool gasSensorActive = false;
 bool onOff = false;
 bool blinkLed = false;
-bool blinkLedActive = false;
+bool blinkLedNegativeActive = false;
 bool buzzerPositive = false;
 bool buzzerNegative = false;
 bool buzzerStatus = false;
@@ -116,7 +116,7 @@ void setup()
 
 	// task create
 	xTaskCreate(Task_Led, "TASK_LED", 256, NULL, 1, &Task_Led_Handle);
-	xTaskCreate(Task_Blink_Led, "TASK_BLINK_LED", 256, NULL, 1, &Task_Blink_Led_Handle);
+	xTaskCreate(Task_Blink_Led_Negative, "TASK_BLINK_LED_NEGATIVE", 256, NULL, 1, &Task_Blink_Led_Negative_Handle);
 	xTaskCreate(Task_Pir, "TASK_PIR", 256, NULL, 1, &Task_Pir_Handle);
 	xTaskCreate(Task_Magnet, "TASK_MAGNET", 256, NULL, 1, &Task_Magnet_Handle);
 	xTaskCreate(Task_Water, "TASK_WATER", 256, NULL, 1, &Task_Water_Handle);
@@ -268,12 +268,12 @@ void Task_Buzzer(void* param) {
 	}
 }
 
-void Task_Blink_Led(void* param) {
+void Task_Blink_Led_Negative(void* param) {
 	(void)param;
 
 	while (1) {
 		// blink led pir
-		if (blinkLedActive == false) {
+		if (blinkLedNegativeActive == false) {
 			blinkLed = false;
 			digitalWrite(ledBlinkRed, LOW);
 		}
@@ -304,7 +304,7 @@ void Task_Pir(void* param) {
 	while (1) {
 		if (digitalRead(pirA) == HIGH || digitalRead(pirB) == HIGH) {
 			if (onOff == false) {
-				blinkLedActive = true;
+				blinkLedNegativeActive = true;
 			}
 			pirSensorActive = true;
 		}
@@ -322,7 +322,7 @@ void Task_Magnet(void* param) {
 	while (1) {
 		if (digitalRead(MagnetA) == 1 || digitalRead(MagnetB) == 1 || digitalRead(MagnetC) == 1) {
 			if (onOff == false) {
-				blinkLedActive = true;
+				blinkLedNegativeActive = true;
 			}
 			magneticSensorActive = true;
 		}
@@ -338,25 +338,24 @@ void Task_Water(void* param) {
 	(void)param;
 
 	while (1) {
-		Serial.println(analogRead(WaterSensor));
 
 		if (analogRead(WaterSensor) >= 100 && analogRead(WaterSensor) < 500) {
 			if (onOff == false) {
-				blinkLedActive = true;
+				blinkLedNegativeActive = true;
 			}
 			waterLevel = 1;
 			waterSensorActive = true;
 		}
 		else if (analogRead(WaterSensor) >= 500 && analogRead(WaterSensor) < 600) {
 			if (onOff == false) {
-				blinkLedActive = true;
+				blinkLedNegativeActive = true;
 			}
 			waterLevel = 2;
 			waterSensorActive = true;
 		}
 		else if (analogRead(WaterSensor) >= 600) {
 			if (onOff == false) {
-				blinkLedActive = true;
+				blinkLedNegativeActive = true;
 			}
 			waterLevel = 3;
 			waterSensorActive = true;
@@ -437,7 +436,7 @@ void Task_Alarm(void* param) {
 					loginUserB = false;
 				}
 
-				blinkLedActive = false;
+				blinkLedNegativeActive = false;
 				buzzerPositive = true;
 				buzzerNegative = false;
 				buzzerStatus = false;
