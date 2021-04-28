@@ -7,6 +7,7 @@
 void Task_Led(void* param);
 void Task_Blink_Led(void* param);
 void Task_Pir(void* param);
+void Task_Magnet(void* param);
 void Task_Buzzer(void* param);
 void Task_Alarm(void* param);
 
@@ -14,6 +15,7 @@ void Task_Alarm(void* param);
 TaskHandle_t Task_Led_Handle;
 TaskHandle_t Task_Blink_Led_Handle;
 TaskHandle_t Task_Pir_Handle;
+TaskHandle_t Task_Magnet_Handle;
 TaskHandle_t Task_Buzzer_Handle;
 TaskHandle_t Task_Alarm_Handle;
 
@@ -33,6 +35,9 @@ TaskHandle_t Task_Alarm_Handle;
 #define buzzer 31
 #define pirA 13
 #define pirB 12
+#define MagnetA 5
+#define MagnetB 6
+#define MagnetC 7
 #define sdaPin 9
 #define resetPin 8
 
@@ -98,11 +103,15 @@ void setup()
 	pinMode(ledOnOffRed, OUTPUT);
 	pinMode(pirA, INPUT);
 	pinMode(pirB, INPUT);
+	pinMode(MagnetA, INPUT);
+	pinMode(MagnetB, INPUT);
+	pinMode(MagnetC, INPUT);
 
 	// task create
 	xTaskCreate(Task_Led, "TASK_LED", 256, NULL, 1, &Task_Led_Handle);
 	xTaskCreate(Task_Blink_Led, "TASK_BLINK_LED", 256, NULL, 1, &Task_Blink_Led_Handle);
 	xTaskCreate(Task_Pir, "TASK_PIR", 256, NULL, 1, &Task_Pir_Handle);
+	xTaskCreate(Task_Magnet, "TASK_MAGNET", 256, NULL, 1, &Task_Magnet_Handle);
 	xTaskCreate(Task_Buzzer, "TASK_BUZZER", 256, NULL, 1, &Task_Buzzer_Handle);
 	xTaskCreate(Task_Alarm, "TASK_ALARM", 2048, NULL, 1, &Task_Alarm_Handle);
 }
@@ -114,8 +123,20 @@ void Task_Led(void* param) {
 
 	while (1) {
 		// led pir
-		if (pirSensorActive == true) digitalWrite(ledPir, HIGH);
-		else digitalWrite(ledPir, LOW);
+		if (pirSensorActive == true) {
+			digitalWrite(ledPir, HIGH);
+		}
+		else {
+			digitalWrite(ledPir, LOW);
+		}
+
+		// led magnet
+		if (magneticSensorActive == true) {
+			digitalWrite(ledMagnetic, HIGH);
+		}
+		else {
+			digitalWrite(ledMagnetic, LOW);
+		}
 
 		// led on, off and input code
 		if (alarmStatus == -1) {
@@ -231,11 +252,32 @@ void Task_Pir(void* param) {
 
 	while (1) {
 		if (digitalRead(pirA) == HIGH || digitalRead(pirB) == HIGH) {
-			if (onOff == false) blinkLedActive = true;
-
+			if (onOff == false) {
+				blinkLedActive = true;
+			}
 			pirSensorActive = true;
 		}
-		else pirSensorActive = false;
+		else {
+			pirSensorActive = false;
+		}
+
+		vTaskDelay(50 / portTICK_PERIOD_MS);
+	}
+}
+
+void Task_Magnet(void* param) {
+	(void)param;
+
+	while (1) {
+		if (digitalRead(MagnetA) == 1 || digitalRead(MagnetB) == 1 || digitalRead(MagnetC) == 1) {
+			if (onOff == false) {
+				blinkLedActive = true;
+			}
+			magneticSensorActive = true;
+		}
+		else {
+			magneticSensorActive = false;
+		}
 
 		vTaskDelay(50 / portTICK_PERIOD_MS);
 	}
