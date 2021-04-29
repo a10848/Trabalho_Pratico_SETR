@@ -392,7 +392,7 @@ void Task_Alarm(void* param) {
 		if (key != NO_KEY) {
 			Serial.println(key);
 		}
-		if (rfidCode == rfidAdmin || rfidCode == rfidUserA || rfidCode == rfidUserB) {
+		if (key == '#' || rfidCode == rfidAdmin || rfidCode == rfidUserA || rfidCode == rfidUserB) {
 			alarmStatus = -1;
 			do {
 				key = my_key_pad.getKey();
@@ -418,6 +418,9 @@ void Task_Alarm(void* param) {
 			}
 			else if (rfidCode == rfidUserB && authenticationCode == authenticationUserB) {
 				loginUserB = true;
+			}
+			else if (authenticationCode == authenticationAdmin) {
+				loginAdmin = true;
 			}
 
 			if (loginAdmin == true || loginUserA == true || loginUserB == true) {
