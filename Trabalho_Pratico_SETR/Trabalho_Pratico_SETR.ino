@@ -1,7 +1,11 @@
+#include <EEPROM.h>
 #include <Arduino_FreeRTOS.h>
 #include <Keypad.h>
 #include <SPI.h>
 #include <RFID.h>
+//#include <Adafruit_SSD1306.h>
+//#include <Adafruit_GFX.h>
+//#include <Wire.h>
 
 // task
 void Task_Led(void* param);
@@ -9,9 +13,11 @@ void Task_Blink_Led_Negative(void* param);
 void Task_Pir(void* param);
 void Task_Magnet(void* param);
 void Task_Water(void* param);
+void Task_Gas(void* param);
 void Task_Buzzer(void* param);
 void Task_Alarm(void* param);
 void Task_Led_Water(void* param);
+//void Task_Screen(void* param);
 
 // handle
 TaskHandle_t Task_Led_Handle;
@@ -19,9 +25,11 @@ TaskHandle_t Task_Blink_Led_Negative_Handle;
 TaskHandle_t Task_Pir_Handle;
 TaskHandle_t Task_Magnet_Handle;
 TaskHandle_t Task_Water_Handle;
+TaskHandle_t Task_Gas_Handle;
 TaskHandle_t Task_Buzzer_Handle;
 TaskHandle_t Task_Alarm_Handle;
 TaskHandle_t Task_Led_Water_Handle;
+//TaskHandle_t Task_Screen_Handle;
 
 // pin
 #define ledBlinkRed 32
@@ -42,6 +50,7 @@ TaskHandle_t Task_Led_Water_Handle;
 #define MagnetA 5
 #define MagnetB 6
 #define MagnetC 7
+#define GasSensor 11
 #define WaterSensor A0
 #define sdaPin 9
 #define resetPin 8
@@ -53,7 +62,7 @@ bool pirSensorActive = false;
 bool magneticSensorActive = false;
 bool waterSensorActive = false;
 bool gasSensorActive = false;
-bool onOff = false;
+bool onOff;
 bool blinkLed = false;
 bool blinkLedNegativeActive = false;
 bool buzzerPositive = false;
@@ -89,11 +98,26 @@ String rfidAdmin = "8910412177140";
 String rfidUserA = "443023322657";
 String rfidUserB = "10824477172121";
 
+// screen
+/* #define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 32
+#define OLED_RESET     4
+#define SCREEN_ADDRESS 0x3C */
+//Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
 void setup()
 {
 	Serial.begin(9600);
 	SPI.begin();
 	rfid522.init();
+
+	/*int value = EEPROM.read(0);
+	onOff = value = 0 ? false : true;*/
+
+	/*if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+		Serial.println(F("SSD1306 allocation failed"));
+		for (;;); // Don't proceed, loop forever
+	}*/
 
 	pinMode(ledBlinkRed, OUTPUT);
 	pinMode(ledPir, OUTPUT);
@@ -113,19 +137,41 @@ void setup()
 	pinMode(MagnetB, INPUT);
 	pinMode(MagnetC, INPUT);
 	pinMode(WaterSensor, INPUT);
+	pinMode(GasSensor, INPUT);
 
 	// task create
 	xTaskCreate(Task_Led, "TASK_LED", 256, NULL, 1, &Task_Led_Handle);
 	xTaskCreate(Task_Blink_Led_Negative, "TASK_BLINK_LED_NEGATIVE", 256, NULL, 1, &Task_Blink_Led_Negative_Handle);
 	xTaskCreate(Task_Pir, "TASK_PIR", 256, NULL, 1, &Task_Pir_Handle);
 	xTaskCreate(Task_Magnet, "TASK_MAGNET", 256, NULL, 1, &Task_Magnet_Handle);
+	xTaskCreate(Task_Gas, "TASK_GAS", 256, NULL, 1, &Task_Gas_Handle);
 	xTaskCreate(Task_Water, "TASK_WATER", 256, NULL, 1, &Task_Water_Handle);
 	xTaskCreate(Task_Buzzer, "TASK_BUZZER", 256, NULL, 1, &Task_Buzzer_Handle);
 	xTaskCreate(Task_Alarm, "TASK_ALARM", 2048, NULL, 1, &Task_Alarm_Handle);
 	xTaskCreate(Task_Led_Water, "TASK_LED_WATER", 256, NULL, 1, &Task_Led_Water_Handle);
+	//xTaskCreate(Task_Screen, "TASK_LED", 2048, NULL, 1, &Task_Screen_Handle);
 }
 
 void loop() {}
+
+/*void Task_Screen(void* param) {
+	(void)param;
+
+	while (1) {
+		// screen
+		display.clearDisplay();
+
+		display.setTextSize(1);
+		display.setTextColor(WHITE);
+		display.setCursor(0, 10);
+
+		// Display static text
+		display.println("Hello, world!");
+		display.display();
+
+		vTaskDelay(1000 / portTICK_PERIOD_MS);
+	}
+}*/
 
 void Task_Led(void* param) {
 	(void)param;
@@ -137,6 +183,14 @@ void Task_Led(void* param) {
 		}
 		else {
 			digitalWrite(ledPir, LOW);
+		}
+
+		// led gas
+		if (gasSensorActive == true) {
+			digitalWrite(ledGas, HIGH);
+		}
+		else {
+			digitalWrite(ledGas, LOW);
 		}
 
 		// led magnet
@@ -316,6 +370,24 @@ void Task_Pir(void* param) {
 	}
 }
 
+void Task_Gas(void* param) {
+	(void)param;
+
+	while (1) {
+		if (digitalRead(GasSensor) == LOW) {
+			if (onOff == false) {
+				blinkLedNegativeActive = true;
+			}
+			gasSensorActive = true;
+		}
+		else {
+			gasSensorActive = false;
+		}
+
+		vTaskDelay(50 / portTICK_PERIOD_MS);
+	}
+}
+
 void Task_Magnet(void* param) {
 	(void)param;
 
@@ -475,7 +547,9 @@ void Task_Alarm(void* param) {
 
 			authenticationCode = "";
 		}
+
 		vTaskDelay(100 / portTICK_PERIOD_MS);
 		key = NO_KEY;
+		Serial.println(onOff);
 	}
 }
