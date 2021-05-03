@@ -3,9 +3,12 @@
 #include <Keypad.h>
 #include <SPI.h>
 #include <RFID.h>
-//#include <Adafruit_SSD1306.h>
-//#include <Adafruit_GFX.h>
-//#include <Wire.h>
+#include <Wire.h> 
+#include <LiquidCrystal_I2C.h>
+#include <virtuabotixRTC.h>
+#include <Time.h>
+
+#pragma region tasks e handles
 
 // task
 void Task_Led(void* param);
@@ -17,7 +20,7 @@ void Task_Gas(void* param);
 void Task_Buzzer(void* param);
 void Task_Alarm(void* param);
 void Task_Led_Water(void* param);
-//void Task_Screen(void* param);
+void Task_Screen(void* param);
 
 // handle
 TaskHandle_t Task_Led_Handle;
@@ -29,7 +32,11 @@ TaskHandle_t Task_Gas_Handle;
 TaskHandle_t Task_Buzzer_Handle;
 TaskHandle_t Task_Alarm_Handle;
 TaskHandle_t Task_Led_Water_Handle;
-//TaskHandle_t Task_Screen_Handle;
+TaskHandle_t Task_Screen_Handle;
+
+#pragma endregion
+
+#pragma region pinos e variáveis
 
 // pin
 #define ledBlinkRed 32
@@ -54,6 +61,9 @@ TaskHandle_t Task_Led_Water_Handle;
 #define WaterSensor A0
 #define sdaPin 9
 #define resetPin 8
+#define ce 2
+#define io 3
+#define clk 4
 
 // variable
 #define countDownTime 30
@@ -72,9 +82,12 @@ bool loginAdmin = false;
 bool loginUserA = false;
 bool loginUserB = false;
 int alarmStatus = 0;
+int previousAlarmStatus = 0;
 int waterLevel = 0;
 int countDown = countDownTime;
 int codeError = codeErrorAttempts;
+int cntDigits = 0;
+int screenClock = 30;
 
 // rfid
 RFID rfid522(sdaPin, resetPin);
@@ -99,11 +112,14 @@ String rfidUserA = "443023322657";
 String rfidUserB = "10824477172121";
 
 // screen
-/* #define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 32
-#define OLED_RESET     4
-#define SCREEN_ADDRESS 0x3C */
-//Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+LiquidCrystal_I2C lcd(0x27, 20, 4);
+
+// clock
+virtuabotixRTC myRTC(clk, io, ce);
+
+#pragma endregion
+
+#pragma region SETUP
 
 void setup()
 {
@@ -111,13 +127,7 @@ void setup()
 	SPI.begin();
 	rfid522.init();
 
-	/*int value = EEPROM.read(0);
-	onOff = value = 0 ? false : true;*/
-
-	/*if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-		Serial.println(F("SSD1306 allocation failed"));
-		for (;;); // Don't proceed, loop forever
-	}*/
+	lcd.init();
 
 	pinMode(ledBlinkRed, OUTPUT);
 	pinMode(ledPir, OUTPUT);
@@ -139,6 +149,8 @@ void setup()
 	pinMode(WaterSensor, INPUT);
 	pinMode(GasSensor, INPUT);
 
+#pragma region criação de tasks
+
 	// task create
 	xTaskCreate(Task_Led, "TASK_LED", 256, NULL, 1, &Task_Led_Handle);
 	xTaskCreate(Task_Blink_Led_Negative, "TASK_BLINK_LED_NEGATIVE", 256, NULL, 1, &Task_Blink_Led_Negative_Handle);
@@ -149,29 +161,74 @@ void setup()
 	xTaskCreate(Task_Buzzer, "TASK_BUZZER", 256, NULL, 1, &Task_Buzzer_Handle);
 	xTaskCreate(Task_Alarm, "TASK_ALARM", 2048, NULL, 1, &Task_Alarm_Handle);
 	xTaskCreate(Task_Led_Water, "TASK_LED_WATER", 256, NULL, 1, &Task_Led_Water_Handle);
-	//xTaskCreate(Task_Screen, "TASK_LED", 2048, NULL, 1, &Task_Screen_Handle);
+	xTaskCreate(Task_Screen, "TASK_LED", 1024, NULL, 1, &Task_Screen_Handle);
+
+#pragma endregion
+
 }
+
+#pragma endregion
 
 void loop() {}
 
-/*void Task_Screen(void* param) {
+#pragma region task para o ecrã lcd
+
+void Task_Screen(void* param) {
 	(void)param;
 
 	while (1) {
 		// screen
-		display.clearDisplay();
+		lcd.backlight();
 
-		display.setTextSize(1);
-		display.setTextColor(WHITE);
-		display.setCursor(0, 10);
+		if (screenClock >= 0) {
+			lcd.setCursor(0, 0);
+			lcd.print("Alarme SETR");
 
-		// Display static text
-		display.println("Hello, world!");
-		display.display();
+			if (alarmStatus == -1) {
+				lcd.setCursor(0, 1);
+				lcd.print("Codigo:");
+			}
+			else if (alarmStatus == 1) {
+				lcd.setCursor(0, 1);
+				lcd.print("Desarmado");
+			}
+			else if (alarmStatus == 0) {
+				lcd.setCursor(0, 1);
+				lcd.print("Armado");
+			}
+			screenClock--;
+		}
+		else {
+			lcd.clear();
+			// relogio
+			if (alarmStatus == -1) {
+
+				alarmStatus = previousAlarmStatus;
+
+				myRTC.updateTime();
+
+				lcd.setCursor(0, 0);
+				lcd.print((String)myRTC.hours + ":" + (String)myRTC.minutes + ":" + (String)myRTC.seconds);
+				lcd.setCursor(0, 1);
+				lcd.print((String)myRTC.dayofmonth + "/" + (String)myRTC.month + "/" + (String)myRTC.year);
+			}
+			else {
+				myRTC.updateTime();
+
+				lcd.setCursor(0, 0);
+				lcd.print((String)myRTC.hours + ":" + (String)myRTC.minutes + ":" + (String)myRTC.seconds);
+				lcd.setCursor(0, 1);
+				lcd.print((String)myRTC.dayofmonth + "/" + (String)myRTC.month + "/" + (String)myRTC.year);
+			}
+		}
 
 		vTaskDelay(1000 / portTICK_PERIOD_MS);
 	}
-}*/
+}
+
+#pragma endregion
+
+#pragma region Task para os leds de variados sensores mais genericos
 
 void Task_Led(void* param) {
 	(void)param;
@@ -205,7 +262,6 @@ void Task_Led(void* param) {
 		if (waterSensorActive == true) {
 			if (WaterSensor == 1) {
 				digitalWrite(ledWater, HIGH);
-
 			}
 		}
 		else {
@@ -233,11 +289,16 @@ void Task_Led(void* param) {
 	}
 }
 
+#pragma endregion
+
+#pragma region Task para o led do sensor de agua
+
 void Task_Led_Water(void* param) {
 	(void)param;
 
 	while (1) {
-		// led water
+
+		// led water, liga quando o sensor é ativado
 		if (waterSensorActive == true) {
 			if (waterLevel == 1) {
 				digitalWrite(ledWater, HIGH);
@@ -264,12 +325,18 @@ void Task_Led_Water(void* param) {
 	}
 }
 
+#pragma endregion
+
+#pragma region Task para os dois sons de alarme, positivo e negativo
+
 void Task_Buzzer(void* param) {
 	(void)param;
 
 	while (1) {
 		// buzzer
 		while (buzzerNegative == true) {
+
+			// tom do alarme quando dipara
 			if (buzzerStatus == false) {
 				tone(buzzer, 4000);
 				vTaskDelay(150 / portTICK_PERIOD_MS);
@@ -284,6 +351,7 @@ void Task_Buzzer(void* param) {
 			}
 		}
 
+		// tom do alarme para confirmação de authentication e de armado e desarmado
 		if (buzzerPositive == true) {
 			tone(buzzer, 4000);
 			vTaskDelay(100 / portTICK_PERIOD_MS);
@@ -322,16 +390,23 @@ void Task_Buzzer(void* param) {
 	}
 }
 
+#pragma endregion
+
+#pragma region Task para o led vermelho com a contagem decrescente para o disparo do alarme
+
 void Task_Blink_Led_Negative(void* param) {
 	(void)param;
 
 	while (1) {
+
 		// blink led pir
 		if (blinkLedNegativeActive == false) {
 			blinkLed = false;
 			digitalWrite(ledBlinkRed, LOW);
 		}
 		else {
+
+			// faz a contagem decrescente sempre que o led liga ate chegar a 0. depois disso o alarme dispara
 			if (blinkLed == false) {
 				blinkLed = true;
 				digitalWrite(ledBlinkRed, HIGH);
@@ -352,10 +427,16 @@ void Task_Blink_Led_Negative(void* param) {
 	}
 }
 
+#pragma endregion
+
+#pragma region Task para o sensor de movimento pir
+
 void Task_Pir(void* param) {
 	(void)param;
 
 	while (1) {
+
+		// ve o valor obtido por cada sensor de movimento pir
 		if (digitalRead(pirA) == HIGH || digitalRead(pirB) == HIGH) {
 			if (onOff == false) {
 				blinkLedNegativeActive = true;
@@ -370,10 +451,16 @@ void Task_Pir(void* param) {
 	}
 }
 
+#pragma endregion
+
+#pragma region Task para o sensor de gás
+
 void Task_Gas(void* param) {
 	(void)param;
 
 	while (1) {
+
+		// le o valor obtido no sensor de gás. é detetado se o valor for low
 		if (digitalRead(GasSensor) == LOW) {
 			if (onOff == false) {
 				blinkLedNegativeActive = true;
@@ -388,10 +475,16 @@ void Task_Gas(void* param) {
 	}
 }
 
+#pragma endregion
+
+#pragma region Task para o sensor magnético da porta e janela
+
 void Task_Magnet(void* param) {
 	(void)param;
 
 	while (1) {
+
+		// le o valor obtido por cada sensor magnetico
 		if (digitalRead(MagnetA) == 1 || digitalRead(MagnetB) == 1 || digitalRead(MagnetC) == 1) {
 			if (onOff == false) {
 				blinkLedNegativeActive = true;
@@ -406,11 +499,16 @@ void Task_Magnet(void* param) {
 	}
 }
 
+#pragma endregion
+
+#pragma region Task para sensor de deteção de água
+
 void Task_Water(void* param) {
 	(void)param;
 
 	while (1) {
 
+		// le o valor detetado pelo sensor para definir qual o nivel de agua que se encontra no presente
 		if (analogRead(WaterSensor) >= 100 && analogRead(WaterSensor) < 500) {
 			if (onOff == false) {
 				blinkLedNegativeActive = true;
@@ -441,6 +539,10 @@ void Task_Water(void* param) {
 	}
 }
 
+#pragma endregion
+
+#pragma region Task para verificar a autenticação do alarme
+
 void Task_Alarm(void* param) {
 	(void)param;
 
@@ -448,8 +550,9 @@ void Task_Alarm(void* param) {
 
 	while (1) {
 		rfidCode = "";
-		key = my_key_pad.getKey();
+		key = my_key_pad.getKey(); // le guarda tag rfid
 
+		// mostra o codigo tag no serial monitor 
 		if (rfid522.isCard())
 		{
 			rfid522.readCardSerial();
@@ -459,13 +562,20 @@ void Task_Alarm(void* param) {
 				rfidCode += rfid522.serNum[i];
 			}
 			Serial.println(rfidCode);
+			screenClock = 30;
 		}
 
+		// escreve no serial monitor a tecla que é primida
 		if (key != NO_KEY) {
+			screenClock = 30;
 			Serial.println(key);
 		}
-		if (key == '#' || rfidCode == rfidAdmin || rfidCode == rfidUserA || rfidCode == rfidUserB) {
-			alarmStatus = -1;
+
+		// guarda o codigo introduzido para verificar se a autehentication pode ser validada
+		if (rfidCode == rfidAdmin || rfidCode == rfidUserA || rfidCode == rfidUserB) {
+			alarmStatus = -1; // estado de introdução do codigo
+			lcd.clear();
+			previousAlarmStatus = alarmStatus;
 			do {
 				key = my_key_pad.getKey();
 				if (key != NO_KEY) {
@@ -473,6 +583,13 @@ void Task_Alarm(void* param) {
 						authenticationCode += key;
 						i++;
 						Serial.print("*");
+						cntDigits++;
+						lcd.setCursor(cntDigits + 8, 1);
+						lcd.print("*");
+
+						if (screenClock <= 0) {
+							break;
+						}
 					}
 				}
 			} while (key != '#');
@@ -482,6 +599,7 @@ void Task_Alarm(void* param) {
 			Serial.println("");
 			Serial.println(authenticationCode);
 
+			// verifica se o codigo se verifica com a tag rfid dependendo do utilizador
 			if (rfidCode == rfidAdmin && authenticationCode == authenticationAdmin) {
 				loginAdmin = true;
 			}
@@ -495,46 +613,67 @@ void Task_Alarm(void* param) {
 				loginAdmin = true;
 			}
 
+			// mostra mensagem dependendo do utilizador
 			if (loginAdmin == true || loginUserA == true || loginUserB == true) {
 				Serial.println("Authentication successful!");
 
+				// admin
 				if (loginAdmin == true) {
 					Serial.println("Welcome Admin...");
 					loginAdmin = false;
 				}
+
+				// user xavita
 				if (loginUserA == true) {
 					Serial.println("Welcome Xavita...");
 					loginUserA = false;
 				}
+
+				// user guelhas
 				if (loginUserB == true) {
 					Serial.println("Welcome Guelhas...");
 					loginUserB = false;
 				}
 
+				// desativa alarme
 				blinkLedNegativeActive = false;
 				buzzerPositive = true;
 				buzzerNegative = false;
 				buzzerStatus = false;
+				cntDigits = 0;
 
+				// altera o estado da viariavel onOff para verificar se o estadoanterior era armado ou desarmado.
 				if (onOff == true) {
 					onOff = false;
 					alarmStatus = 0;
 					Serial.println("Alarm deactivated!");
+					lcd.clear();
 				}
 				else {
 					onOff = true;
 					alarmStatus = 1;
 					Serial.println("Alarm activated!");
+					lcd.clear();
 				}
 
 				codeError = codeErrorAttempts;
 			}
+
+			// authentication fail
 			else {
 				Serial.println("Authentication unsuccessful!");
 
-				if (onOff == true) alarmStatus = 1;
-				else alarmStatus = 0;
+				// status do alarme, armado ou desarmado.
+				if (onOff == true)
+				{
+					alarmStatus = 1;
+				}
+				else
+				{
+					alarmStatus = 0;
+				}
 
+				// numero máximo de tentativas possiveis. caso contrario, o alarme dispara e fica armado.
 				if (codeError > (codeErrorAttempts - (codeErrorAttempts - 1))) {
 					codeError--;
 				}
@@ -545,11 +684,12 @@ void Task_Alarm(void* param) {
 				}
 			}
 
-			authenticationCode = "";
+			authenticationCode = ""; // reset à variavel onde guarda a pass introduzida
 		}
 
-		vTaskDelay(100 / portTICK_PERIOD_MS);
-		key = NO_KEY;
-		Serial.println(onOff);
+		vTaskDelay(100 / portTICK_PERIOD_MS); // delay
+		key = NO_KEY; // sem teclas primidas
 	}
 }
+
+#pragma endregion
