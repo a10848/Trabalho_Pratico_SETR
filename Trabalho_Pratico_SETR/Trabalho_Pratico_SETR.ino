@@ -176,11 +176,11 @@ void setup()
 	xTaskCreate(Task_Gas, "TASK_GAS", 256, NULL, 1, &Task_Gas_Handle);
 	xTaskCreate(Task_Water, "TASK_WATER", 256, NULL, 1, &Task_Water_Handle);
 	xTaskCreate(Task_Buzzer, "TASK_BUZZER", 256, NULL, 1, &Task_Buzzer_Handle);
-	xTaskCreate(Task_Alarm, "TASK_ALARM", 3056, NULL, 1, &Task_Alarm_Handle);
+	xTaskCreate(Task_Alarm, "TASK_ALARM", 1024, NULL, 1, &Task_Alarm_Handle);
 	xTaskCreate(Task_Led_Water, "TASK_LED_WATER", 256, NULL, 1, &Task_Led_Water_Handle);
-	xTaskCreate(Task_Screen, "TASK_LED", 1024, NULL, 1, &Task_Screen_Handle);
+	xTaskCreate(Task_Screen, "TASK_LED", 256, NULL, 1, &Task_Screen_Handle);
 	xTaskCreate(Task_Led_Presence, "TASK_LED_PRESENCE", 256, NULL, 1, &Task_Led_Presence_Handle);
-	xTaskCreate(Task_Presence, "TASK_PRESENCE", 1024, NULL, 1, &Task_Presence_Handle);
+	xTaskCreate(Task_Presence, "TASK_PRESENCE", 256, NULL, 1, &Task_Presence_Handle);
 
 #pragma endregion
 
