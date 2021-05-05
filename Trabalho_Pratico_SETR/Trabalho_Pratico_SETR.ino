@@ -21,6 +21,8 @@ void Task_Buzzer(void* param);
 void Task_Alarm(void* param);
 void Task_Led_Water(void* param);
 void Task_Screen(void* param);
+void Task_Led_Presence(void* param);
+void Task_Presence(void* param);
 
 // handle
 TaskHandle_t Task_Led_Handle;
@@ -33,6 +35,8 @@ TaskHandle_t Task_Buzzer_Handle;
 TaskHandle_t Task_Alarm_Handle;
 TaskHandle_t Task_Led_Water_Handle;
 TaskHandle_t Task_Screen_Handle;
+TaskHandle_t Task_Led_Presence_Handle;
+TaskHandle_t Task_Presence_Handle;
 
 #pragma endregion
 
@@ -64,6 +68,8 @@ TaskHandle_t Task_Screen_Handle;
 #define ce 2
 #define io 3
 #define clk 4
+#define ledDoor 46
+#define ledWindow 47
 
 // variable
 #define countDownTime 30
@@ -72,15 +78,21 @@ bool pirSensorActive = false;
 bool magneticSensorActive = false;
 bool waterSensorActive = false;
 bool gasSensorActive = false;
-bool onOff;
+bool onOff = false;
 bool blinkLed = false;
 bool blinkLedNegativeActive = false;
 bool buzzerPositive = false;
 bool buzzerNegative = false;
 bool buzzerStatus = false;
 bool loginAdmin = false;
+bool loginAdminDoor = false;
+bool loginAdminWindow = false;
 bool loginUserA = false;
 bool loginUserB = false;
+bool ledDoorActive = false;
+bool ledWindowActive = false;
+bool presence = false;
+bool isItDoor = true;
 int alarmStatus = 0;
 int previousAlarmStatus = 0;
 int waterLevel = 0;
@@ -88,6 +100,7 @@ int countDown = countDownTime;
 int codeError = codeErrorAttempts;
 int cntDigits = 0;
 int screenClock = 30;
+int PresenceClock = 60;
 
 // rfid
 RFID rfid522(sdaPin, resetPin);
@@ -104,6 +117,8 @@ Keypad my_key_pad = Keypad(makeKeymap(key_map), row_pins, col_pins, rows, cols);
 // access codes
 String authenticationCode;
 String authenticationAdmin = "5052";
+String authenticationAdminDoor = "5000";
+String authenticationAdminWindow = "5050";
 String authenticationUserA = "1234";
 String authenticationUserB = "4321";
 String rfidCode;
@@ -148,6 +163,8 @@ void setup()
 	pinMode(MagnetC, INPUT);
 	pinMode(WaterSensor, INPUT);
 	pinMode(GasSensor, INPUT);
+	pinMode(ledDoor, OUTPUT);
+	pinMode(ledWindow, OUTPUT);
 
 #pragma region criação de tasks
 
@@ -159,9 +176,11 @@ void setup()
 	xTaskCreate(Task_Gas, "TASK_GAS", 256, NULL, 1, &Task_Gas_Handle);
 	xTaskCreate(Task_Water, "TASK_WATER", 256, NULL, 1, &Task_Water_Handle);
 	xTaskCreate(Task_Buzzer, "TASK_BUZZER", 256, NULL, 1, &Task_Buzzer_Handle);
-	xTaskCreate(Task_Alarm, "TASK_ALARM", 2048, NULL, 1, &Task_Alarm_Handle);
+	xTaskCreate(Task_Alarm, "TASK_ALARM", 3056, NULL, 1, &Task_Alarm_Handle);
 	xTaskCreate(Task_Led_Water, "TASK_LED_WATER", 256, NULL, 1, &Task_Led_Water_Handle);
 	xTaskCreate(Task_Screen, "TASK_LED", 1024, NULL, 1, &Task_Screen_Handle);
+	xTaskCreate(Task_Led_Presence, "TASK_LED_PRESENCE", 256, NULL, 1, &Task_Led_Presence_Handle);
+	xTaskCreate(Task_Presence, "TASK_PRESENCE", 1024, NULL, 1, &Task_Presence_Handle);
 
 #pragma endregion
 
@@ -228,6 +247,75 @@ void Task_Screen(void* param) {
 
 #pragma endregion
 
+#pragma region Task para os leds de presença
+
+void Task_Led_Presence(void* param) {
+	(void)param;
+
+	while (1) {
+
+		// led door
+		if (ledDoorActive == true) {
+			digitalWrite(ledDoor, HIGH);
+		}
+		else {
+			digitalWrite(ledDoor, LOW);
+		}
+
+		// led window
+		if (ledWindowActive == true) {
+			digitalWrite(ledWindow, HIGH);
+		}
+		else {
+			digitalWrite(ledWindow, LOW);
+		}
+
+		vTaskDelay(100 / portTICK_PERIOD_MS);
+	}
+}
+
+#pragma endregion
+
+#pragma region Task simulação de presença
+
+void Task_Presence(void* param) {
+	(void)param;
+
+	while (1) {
+		
+		// simulador de presença
+		if (presence == true) 
+		{
+			if (PresenceClock >= 0) 
+			{
+				PresenceClock--;
+			}
+			else {
+				if (isItDoor == true) 
+				{
+					isItDoor = false;
+					ledDoorActive = true;
+					ledWindowActive = false;
+				}
+				else 
+				{
+					isItDoor = true;
+					ledDoorActive = false;
+					ledWindowActive = true;
+				}
+
+				PresenceClock = 60;
+			}
+
+			Serial.println("Simulador: " + (String)PresenceClock);
+		}
+
+		vTaskDelay(1000 / portTICK_PERIOD_MS);
+	}
+}
+
+#pragma endregion
+
 #pragma region Task para os leds de variados sensores mais genericos
 
 void Task_Led(void* param) {
@@ -285,7 +373,7 @@ void Task_Led(void* param) {
 			digitalWrite(ledOnOffRed, LOW);
 		}
 
-		vTaskDelay(50 / portTICK_PERIOD_MS);
+		vTaskDelay(100 / portTICK_PERIOD_MS);
 	}
 }
 
@@ -322,6 +410,8 @@ void Task_Led_Water(void* param) {
 		else {
 			digitalWrite(ledWater, LOW);
 		}
+
+		vTaskDelay(100 / portTICK_PERIOD_MS); // delay
 	}
 }
 
@@ -443,11 +533,23 @@ void Task_Pir(void* param) {
 			}
 			pirSensorActive = true;
 		}
+		else if (digitalRead(pirA) == HIGH && loginAdminDoor == true) {
+			if (onOff == false) {
+				blinkLedNegativeActive = true;
+			}
+			pirSensorActive = true;
+		}
+		else if (digitalRead(pirB) == HIGH && loginAdminWindow == true) {
+			if (onOff == false) {
+				blinkLedNegativeActive = true;
+			}
+			pirSensorActive = true;
+		}
 		else {
 			pirSensorActive = false;
 		}
 
-		vTaskDelay(50 / portTICK_PERIOD_MS);
+		vTaskDelay(100 / portTICK_PERIOD_MS);
 	}
 }
 
@@ -471,7 +573,7 @@ void Task_Gas(void* param) {
 			gasSensorActive = false;
 		}
 
-		vTaskDelay(50 / portTICK_PERIOD_MS);
+		vTaskDelay(100 / portTICK_PERIOD_MS);
 	}
 }
 
@@ -495,7 +597,7 @@ void Task_Magnet(void* param) {
 			magneticSensorActive = false;
 		}
 
-		vTaskDelay(50 / portTICK_PERIOD_MS);
+		vTaskDelay(100 / portTICK_PERIOD_MS);
 	}
 }
 
@@ -535,7 +637,7 @@ void Task_Water(void* param) {
 			waterLevel = 0;
 		}
 
-		vTaskDelay(50 / portTICK_PERIOD_MS);
+		vTaskDelay(100 / portTICK_PERIOD_MS);
 	}
 }
 
@@ -571,11 +673,34 @@ void Task_Alarm(void* param) {
 			Serial.println(key);
 		}
 
+		// liga luz da porta
+		if (key == 'A') {
+			if (ledDoorActive == true) {
+				ledDoorActive = false;
+			}
+			else
+			{
+				ledDoorActive = true;
+			}
+		}
+
+		// liga luz da janela
+		if (key == 'B') {
+			if (ledWindowActive == true) {
+				ledWindowActive = false;
+			}
+			else
+			{
+				ledWindowActive = true;
+			}
+		}
+
 		// guarda o codigo introduzido para verificar se a autehentication pode ser validada
-		if (rfidCode == rfidAdmin || rfidCode == rfidUserA || rfidCode == rfidUserB) {
+		if (key=='#' || rfidCode == rfidAdmin || rfidCode == rfidUserA || rfidCode == rfidUserB) {
 			alarmStatus = -1; // estado de introdução do codigo
 			lcd.clear();
 			previousAlarmStatus = alarmStatus;
+
 			do {
 				key = my_key_pad.getKey();
 				if (key != NO_KEY) {
@@ -602,6 +727,12 @@ void Task_Alarm(void* param) {
 			// verifica se o codigo se verifica com a tag rfid dependendo do utilizador
 			if (rfidCode == rfidAdmin && authenticationCode == authenticationAdmin) {
 				loginAdmin = true;
+			}
+			else if (rfidCode == rfidAdmin && authenticationCode == authenticationAdminDoor) {
+				loginAdminDoor = true;
+			}
+			else if (rfidCode == rfidAdmin && authenticationCode == authenticationAdminWindow) {
+				loginAdminWindow = true;
 			}
 			else if (rfidCode == rfidUserA && authenticationCode == authenticationUserA) {
 				loginUserA = true;
@@ -645,12 +776,14 @@ void Task_Alarm(void* param) {
 				// altera o estado da viariavel onOff para verificar se o estadoanterior era armado ou desarmado.
 				if (onOff == true) {
 					onOff = false;
+					presence = true;
 					alarmStatus = 0;
 					Serial.println("Alarm deactivated!");
 					lcd.clear();
 				}
 				else {
 					onOff = true;
+					presence = false;
 					alarmStatus = 1;
 					Serial.println("Alarm activated!");
 					lcd.clear();
