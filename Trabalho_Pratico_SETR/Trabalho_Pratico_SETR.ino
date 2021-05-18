@@ -1,4 +1,3 @@
-#include <EEPROM.h>
 #include <Arduino_FreeRTOS.h>
 #include <Keypad.h>
 #include <SPI.h>
@@ -23,6 +22,7 @@ void Task_Led_Water(void* param);
 void Task_Screen(void* param);
 void Task_Led_Presence(void* param);
 void Task_Presence(void* param);
+void Task_Read(void* param);
 
 // handle
 TaskHandle_t Task_Led_Handle;
@@ -37,6 +37,7 @@ TaskHandle_t Task_Led_Water_Handle;
 TaskHandle_t Task_Screen_Handle;
 TaskHandle_t Task_Led_Presence_Handle;
 TaskHandle_t Task_Presence_Handle;
+TaskHandle_t Task_Read_Handle;
 
 #pragma endregion
 
@@ -101,6 +102,7 @@ int codeError = codeErrorAttempts;
 int cntDigits = 0;
 int screenClock = 30;
 int PresenceClock = 60;
+int consoleControl = 0;
 
 // rfid
 RFID rfid522(sdaPin, resetPin);
@@ -181,6 +183,7 @@ void setup()
 	xTaskCreate(Task_Screen, "TASK_LED", 256, NULL, 1, &Task_Screen_Handle);
 	xTaskCreate(Task_Led_Presence, "TASK_LED_PRESENCE", 256, NULL, 1, &Task_Led_Presence_Handle);
 	xTaskCreate(Task_Presence, "TASK_PRESENCE", 256, NULL, 1, &Task_Presence_Handle);
+	xTaskCreate(Task_Read, "TASK_READ", 1024, NULL, 1, &Task_Read_Handle);
 
 #pragma endregion
 
@@ -189,6 +192,76 @@ void setup()
 #pragma endregion
 
 void loop() {}
+
+#pragma region Task para leitura de comandos
+
+void Task_Read(void* param) {
+	(void)param;
+
+	while (1) {
+		String readComand;
+		String comand;
+		String option;
+		String value;
+		bool validComand;
+		int index;
+		int intOption;
+		int intValue;
+
+		if (Serial.available() > 0) {
+			readComand = Serial.readStringUntil('\n');
+			validComand = readComand.startsWith("CMD#");
+
+			if (!validComand) {
+				Serial.println("ERRO#Comando inválido.");
+				return;
+			}
+
+			comand = readComand.substring(4);
+			index = comand.indexOf(',');
+
+			if (index != -1) {
+				option = comand.substring(0, index);
+				value = comand.substring(index + 1);
+			}
+
+			intOption = option.toInt();
+			intValue = value.toInt();
+
+			switch (intOption) {
+			case 1:
+				if (intValue == 1) {
+					ledDoorActive = true;
+					consoleControl = 1;
+				}
+				else if (intValue == 0) {
+					ledDoorActive = false;
+					consoleControl = 2;
+				}
+				break;
+
+			case 2:
+				if (intValue == 1) {
+					ledWindowActive = true;
+					consoleControl = 3;
+				}
+				else if (intValue == 0) {
+					ledWindowActive = false;
+					consoleControl = 4;
+				}
+				break;
+
+			default:
+				Serial.println("ERRO#Comando inválido.");
+				break;
+			}
+		}
+
+		vTaskDelay(100 / portTICK_PERIOD_MS);
+	}
+}
+
+#pragma endregion
 
 #pragma region task para o ecrã lcd
 
@@ -241,7 +314,7 @@ void Task_Screen(void* param) {
 			}
 		}
 
-		vTaskDelay(1000 / portTICK_PERIOD_MS);
+		vTaskDelay(500 / portTICK_PERIOD_MS);
 	}
 }
 
@@ -253,21 +326,36 @@ void Task_Led_Presence(void* param) {
 	(void)param;
 
 	while (1) {
-
 		// led door
 		if (ledDoorActive == true) {
-			digitalWrite(ledDoor, HIGH);
+			if (consoleControl == 1) {
+				digitalWrite(ledDoor, HIGH);
+				Serial.println("CMD#1,1");
+				consoleControl = 0;
+			}
 		}
 		else {
-			digitalWrite(ledDoor, LOW);
+			if (consoleControl == 2) {
+				digitalWrite(ledDoor, LOW);
+				Serial.println("CMD#1,0");
+				consoleControl = 0;
+			}
 		}
 
 		// led window
 		if (ledWindowActive == true) {
-			digitalWrite(ledWindow, HIGH);
+			if (consoleControl == 3) {
+				digitalWrite(ledWindow, HIGH);
+				Serial.println("CMD#2,1");
+				consoleControl = 0;
+			}
 		}
 		else {
-			digitalWrite(ledWindow, LOW);
+			if (consoleControl == 4) {
+				digitalWrite(ledWindow, LOW);
+				Serial.println("CMD#2,0");
+				consoleControl = 0;
+			}
 		}
 
 		vTaskDelay(100 / portTICK_PERIOD_MS);
@@ -282,22 +370,22 @@ void Task_Presence(void* param) {
 	(void)param;
 
 	while (1) {
-		
+
 		// simulador de presença
-		if (presence == true) 
+		if (presence == true)
 		{
-			if (PresenceClock >= 0) 
+			if (PresenceClock >= 0)
 			{
 				PresenceClock--;
 			}
 			else {
-				if (isItDoor == true) 
+				if (isItDoor == true)
 				{
 					isItDoor = false;
 					ledDoorActive = true;
 					ledWindowActive = false;
 				}
-				else 
+				else
 				{
 					isItDoor = true;
 					ledDoorActive = false;
@@ -307,7 +395,7 @@ void Task_Presence(void* param) {
 				PresenceClock = 60;
 			}
 
-			Serial.println("Simulador: " + (String)PresenceClock);
+			//Serial.println("Simulador: " + (String)PresenceClock);
 		}
 
 		vTaskDelay(1000 / portTICK_PERIOD_MS);
@@ -658,11 +746,12 @@ void Task_Alarm(void* param) {
 		if (rfid522.isCard())
 		{
 			rfid522.readCardSerial();
-			Serial.println("Card detected!");
+			//Serial.println("Card detected!");
 			for (int i = 0; i < 5; i++)
 			{
 				rfidCode += rfid522.serNum[i];
 			}
+			Serial.print("CMD#R,");
 			Serial.println(rfidCode);
 			screenClock = 30;
 		}
@@ -670,6 +759,7 @@ void Task_Alarm(void* param) {
 		// escreve no serial monitor a tecla que é primida
 		if (key != NO_KEY) {
 			screenClock = 30;
+			Serial.print("CMD#R,");
 			Serial.println(key);
 		}
 
@@ -677,10 +767,12 @@ void Task_Alarm(void* param) {
 		if (key == 'A') {
 			if (ledDoorActive == true) {
 				ledDoorActive = false;
+				consoleControl = 2;
 			}
 			else
 			{
 				ledDoorActive = true;
+				consoleControl = 1;
 			}
 		}
 
@@ -688,15 +780,17 @@ void Task_Alarm(void* param) {
 		if (key == 'B') {
 			if (ledWindowActive == true) {
 				ledWindowActive = false;
+				consoleControl = 4;
 			}
 			else
 			{
 				ledWindowActive = true;
+				consoleControl = 3;
 			}
 		}
 
 		// guarda o codigo introduzido para verificar se a autehentication pode ser validada
-		if (key=='#' || rfidCode == rfidAdmin || rfidCode == rfidUserA || rfidCode == rfidUserB) {
+		if (key == '#' || rfidCode == rfidAdmin || rfidCode == rfidUserA || rfidCode == rfidUserB) {
 			alarmStatus = -1; // estado de introdução do codigo
 			lcd.clear();
 			previousAlarmStatus = alarmStatus;
@@ -707,7 +801,7 @@ void Task_Alarm(void* param) {
 					if (key != '#') {
 						authenticationCode += key;
 						i++;
-						Serial.print("*");
+						//Serial.print("*");
 						cntDigits++;
 						lcd.setCursor(cntDigits + 8, 1);
 						lcd.print("*");
@@ -721,8 +815,8 @@ void Task_Alarm(void* param) {
 		}
 
 		if (authenticationCode != "") {
-			Serial.println("");
-			Serial.println(authenticationCode);
+			//Serial.println("");
+			//Serial.println(authenticationCode);
 
 			// verifica se o codigo se verifica com a tag rfid dependendo do utilizador
 			if (rfidCode == rfidAdmin && authenticationCode == authenticationAdmin) {
@@ -746,23 +840,23 @@ void Task_Alarm(void* param) {
 
 			// mostra mensagem dependendo do utilizador
 			if (loginAdmin == true || loginUserA == true || loginUserB == true) {
-				Serial.println("Authentication successful!");
+				//Serial.println("Authentication successful!");
 
 				// admin
 				if (loginAdmin == true) {
-					Serial.println("Welcome Admin...");
+					//Serial.println("Welcome Admin...");
 					loginAdmin = false;
 				}
 
 				// user xavita
 				if (loginUserA == true) {
-					Serial.println("Welcome Xavita...");
+					//Serial.println("Welcome Xavita...");
 					loginUserA = false;
 				}
 
 				// user guelhas
 				if (loginUserB == true) {
-					Serial.println("Welcome Guelhas...");
+					//Serial.println("Welcome Guelhas...");
 					loginUserB = false;
 				}
 
@@ -778,14 +872,14 @@ void Task_Alarm(void* param) {
 					onOff = false;
 					presence = true;
 					alarmStatus = 0;
-					Serial.println("Alarm deactivated!");
+					//Serial.println("Alarm deactivated!");
 					lcd.clear();
 				}
 				else {
 					onOff = true;
 					presence = false;
 					alarmStatus = 1;
-					Serial.println("Alarm activated!");
+					//Serial.println("Alarm activated!");
 					lcd.clear();
 				}
 
@@ -794,7 +888,7 @@ void Task_Alarm(void* param) {
 
 			// authentication fail
 			else {
-				Serial.println("Authentication unsuccessful!");
+				//Serial.println("Authentication unsuccessful!");
 
 				// status do alarme, armado ou desarmado.
 				if (onOff == true)
