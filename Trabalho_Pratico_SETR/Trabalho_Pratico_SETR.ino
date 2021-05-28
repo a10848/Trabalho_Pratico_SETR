@@ -103,6 +103,13 @@ int cntDigits = 0;
 int screenClock = 30;
 int PresenceClock = 60;
 int consoleControl = 0;
+bool waterPrevious = false;
+bool firePrevious = false;
+bool pirPreviousA = false;
+bool pirPreviousB = false;
+bool windowPreviousA = false;
+bool windowPreviousB = false;
+bool windowPrevious = false;
 
 // rfid
 RFID rfid522(sdaPin, resetPin);
@@ -184,6 +191,26 @@ void setup()
 	xTaskCreate(Task_Led_Presence, "TASK_LED_PRESENCE", 256, NULL, 1, &Task_Led_Presence_Handle);
 	xTaskCreate(Task_Presence, "TASK_PRESENCE", 256, NULL, 1, &Task_Presence_Handle);
 	xTaskCreate(Task_Read, "TASK_READ", 1024, NULL, 1, &Task_Read_Handle);
+
+	/* Inicialização dos valores do alarme */
+	Serial.println("");
+	delay(1000);
+	Serial.println("ALARM#0");
+	delay(1000);
+	Serial.println("LED#1,0");
+	delay(1000);
+	Serial.println("LED#2,0");
+	delay(1000);
+	Serial.println("WATER#0");
+	delay(1000);
+	Serial.println("FIRE#0");
+	delay(1000);
+	Serial.println("PIR#1,0");
+	delay(1000);
+	Serial.println("PIR#2,0");
+	delay(1000);
+	Serial.println("WINDOW#0,0");
+	delay(1000);
 
 #pragma endregion
 
@@ -330,14 +357,14 @@ void Task_Led_Presence(void* param) {
 		if (ledDoorActive == true) {
 			if (consoleControl == 1) {
 				digitalWrite(ledDoor, HIGH);
-				Serial.println("CMD#1,1");
+				Serial.println("LED#1,1");
 				consoleControl = 0;
 			}
 		}
 		else {
 			if (consoleControl == 2) {
 				digitalWrite(ledDoor, LOW);
-				Serial.println("CMD#1,0");
+				Serial.println("LED#1,0");
 				consoleControl = 0;
 			}
 		}
@@ -346,14 +373,14 @@ void Task_Led_Presence(void* param) {
 		if (ledWindowActive == true) {
 			if (consoleControl == 3) {
 				digitalWrite(ledWindow, HIGH);
-				Serial.println("CMD#2,1");
+				Serial.println("LED#2,1");
 				consoleControl = 0;
 			}
 		}
 		else {
 			if (consoleControl == 4) {
 				digitalWrite(ledWindow, LOW);
-				Serial.println("CMD#2,0");
+				Serial.println("LED#2,0");
 				consoleControl = 0;
 			}
 		}
@@ -421,9 +448,21 @@ void Task_Led(void* param) {
 		// led gas
 		if (gasSensorActive == true) {
 			digitalWrite(ledGas, HIGH);
+
+			if (firePrevious != true) {
+				Serial.println("FIRE#1");
+			}
+
+			firePrevious = true;
 		}
 		else {
 			digitalWrite(ledGas, LOW);
+
+			if (firePrevious != false) {
+				Serial.println("FIRE#0");
+			}
+
+			firePrevious = false;
 		}
 
 		// led magnet
@@ -476,11 +515,17 @@ void Task_Led_Water(void* param) {
 
 		// led water, liga quando o sensor é ativado
 		if (waterSensorActive == true) {
+
+			if (waterPrevious != true) {
+				Serial.println("WATER#1");
+			}
+
 			if (waterLevel == 1) {
 				digitalWrite(ledWater, HIGH);
 				vTaskDelay(500 / portTICK_PERIOD_MS);
 				digitalWrite(ledWater, LOW);
 				vTaskDelay(500 / portTICK_PERIOD_MS);
+
 			}
 			else if (waterLevel == 2) {
 				digitalWrite(ledWater, HIGH);
@@ -494,9 +539,17 @@ void Task_Led_Water(void* param) {
 				digitalWrite(ledWater, LOW);
 				vTaskDelay(75 / portTICK_PERIOD_MS);
 			}
+
+			waterPrevious = true;
 		}
 		else {
 			digitalWrite(ledWater, LOW);
+
+			if (waterPrevious != false) {
+				Serial.println("WATER#0");
+			}
+
+			waterPrevious = false;
 		}
 
 		vTaskDelay(100 / portTICK_PERIOD_MS); // delay
@@ -615,6 +668,37 @@ void Task_Pir(void* param) {
 	while (1) {
 
 		// ve o valor obtido por cada sensor de movimento pir
+		if (digitalRead(pirA) == HIGH) {
+			if (pirPreviousA != true) {
+				Serial.println("PIR#1,1");
+
+				pirPreviousA = true;
+			}
+		}
+		else {
+			if (pirPreviousA != false) {
+				Serial.println("PIR#1,0");
+			}
+
+			pirPreviousA = false;
+		}
+
+		if (digitalRead(pirB) == HIGH) {
+			if (pirPreviousB != true) {
+				Serial.println("PIR#2,1");
+
+				pirPreviousB = true;
+			}
+		}
+		else {
+			if (pirPreviousB != false) {
+				Serial.println("PIR#2,0");
+			}
+
+			pirPreviousB = false;
+		}
+
+
 		if (digitalRead(pirA) == HIGH || digitalRead(pirB) == HIGH) {
 			if (onOff == false) {
 				blinkLedNegativeActive = true;
@@ -680,9 +764,43 @@ void Task_Magnet(void* param) {
 				blinkLedNegativeActive = true;
 			}
 			magneticSensorActive = true;
+
+			// janela A
+			if (windowPreviousA != true) {
+				if (digitalRead(MagnetA) == 1 && digitalRead(MagnetB) == 0) {
+					Serial.println("WINDOW#1,0");
+				}
+				windowPreviousA = true;
+			}
+
+			// janela B
+			if (windowPreviousB != true) {
+				if (digitalRead(MagnetA) == 0 && digitalRead(MagnetB) == 1) {
+					Serial.println("WINDOW#0,1");
+				}
+				windowPreviousB = true;
+			}
+
+			// duas janelas
+			if (windowPrevious != true) {
+				if (digitalRead(MagnetA) == 1 && digitalRead(MagnetB) == 1) {
+					Serial.println("WINDOW#1,1");
+				}
+				windowPrevious = true;
+			}
+
 		}
 		else {
 			magneticSensorActive = false;
+
+			if (windowPreviousA != false || windowPreviousB != false || windowPrevious != false) {
+				if (digitalRead(MagnetA) == 0 && digitalRead(MagnetB) == 0) {
+					Serial.println("WINDOW#0,0");
+				}
+				windowPreviousA = false;
+				windowPreviousB = false;
+				windowPrevious = false;
+			}
 		}
 
 		vTaskDelay(100 / portTICK_PERIOD_MS);
@@ -872,14 +990,14 @@ void Task_Alarm(void* param) {
 					onOff = false;
 					presence = true;
 					alarmStatus = 0;
-					//Serial.println("Alarm deactivated!");
+					Serial.println("ALARM#0");
 					lcd.clear();
 				}
 				else {
 					onOff = true;
 					presence = false;
 					alarmStatus = 1;
-					//Serial.println("Alarm activated!");
+					Serial.println("ALARM#1");
 					lcd.clear();
 				}
 
