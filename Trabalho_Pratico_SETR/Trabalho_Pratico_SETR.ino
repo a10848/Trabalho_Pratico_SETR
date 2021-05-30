@@ -71,6 +71,7 @@ TaskHandle_t Task_Read_Handle;
 #define clk 4
 #define ledDoor 46
 #define ledWindow 47
+#define SIZE 10
 
 // variable
 #define countDownTime 30
@@ -82,14 +83,15 @@ bool gasSensorActive = false;
 bool onOff = false;
 bool blinkLed = false;
 bool blinkLedNegativeActive = false;
+bool blinkLedNegativeActive2 = false;
 bool buzzerPositive = false;
 bool buzzerNegative = false;
 bool buzzerStatus = false;
 bool loginAdmin = false;
+bool loginUser = false;
+bool loginSOS = false;
 bool loginAdminDoor = false;
 bool loginAdminWindow = false;
-bool loginUserA = false;
-bool loginUserB = false;
 bool ledDoorActive = false;
 bool ledWindowActive = false;
 bool presence = false;
@@ -110,6 +112,11 @@ bool pirPreviousB = false;
 bool windowPreviousA = false;
 bool windowPreviousB = false;
 bool windowPrevious = false;
+bool displayRefresh = false;
+bool doorPrevious = false;
+bool alarmPrevious = false;
+bool buzzerError = false;
+bool blinkLed2 = false;
 
 // rfid
 RFID rfid522(sdaPin, resetPin);
@@ -125,15 +132,12 @@ Keypad my_key_pad = Keypad(makeKeymap(key_map), row_pins, col_pins, rows, cols);
 
 // access codes
 String authenticationCode;
-String authenticationAdmin = "5052";
-String authenticationAdminDoor = "5000";
-String authenticationAdminWindow = "5050";
-String authenticationUserA = "1234";
-String authenticationUserB = "4321";
+String users[SIZE] = { "SOS", "Admin", "xavita", "guelhas" };
+String rfids[SIZE] = { "0000000000", "8910412177140", "443023322657", "10824477172121" };
+String passwords[SIZE] = { "5555", "5052", "1234", "4321" };
 String rfidCode;
-String rfidAdmin = "8910412177140";
-String rfidUserA = "443023322657";
-String rfidUserB = "10824477172121";
+String user;
+String password;
 
 // screen
 LiquidCrystal_I2C lcd(0x27, 20, 4);
@@ -192,27 +196,42 @@ void setup()
 	xTaskCreate(Task_Presence, "TASK_PRESENCE", 256, NULL, 1, &Task_Presence_Handle);
 	xTaskCreate(Task_Read, "TASK_READ", 1024, NULL, 1, &Task_Read_Handle);
 
+#pragma endregion
+
 	/* Inicialização dos valores do alarme */
 	Serial.println("");
-	delay(1000);
+	delay(500);
+	Serial.println("READY#0");
+	delay(500);
+	for (int i = 0; i < SIZE; i++) {
+		if (users[i] != "" && users[i] != "SOS") {
+			Serial.print("USER#");
+			Serial.println(users[i]);
+			delay(500);
+		}
+	}
 	Serial.println("ALARM#0");
-	delay(1000);
+	delay(500);
 	Serial.println("LED#1,0");
-	delay(1000);
+	delay(500);
 	Serial.println("LED#2,0");
-	delay(1000);
+	delay(500);
 	Serial.println("WATER#0");
-	delay(1000);
+	delay(500);
 	Serial.println("FIRE#0");
-	delay(1000);
+	delay(500);
 	Serial.println("PIR#1,0");
-	delay(1000);
+	delay(500);
 	Serial.println("PIR#2,0");
-	delay(1000);
+	delay(500);
+	Serial.println("DOOR#0");
+	delay(500);
 	Serial.println("WINDOW#0,0");
-	delay(1000);
-
-#pragma endregion
+	delay(500);
+	Serial.println("OUTBREAK#0");
+	delay(500);
+	Serial.println("READY#1");
+	delay(500);
 
 }
 
@@ -226,26 +245,23 @@ void Task_Read(void* param) {
 	(void)param;
 
 	while (1) {
-		String readComand;
-		String comand;
-		String option;
-		String value;
-		bool validComand;
-		int index;
-		int intOption;
-		int intValue;
 
 		if (Serial.available() > 0) {
-			readComand = Serial.readStringUntil('\n');
-			validComand = readComand.startsWith("CMD#");
+			String readComand = Serial.readStringUntil('\n');
+			bool validComand = readComand.startsWith("CMD#");
 
 			if (!validComand) {
 				Serial.println("ERRO#Comando inválido.");
 				return;
 			}
 
-			comand = readComand.substring(4);
-			index = comand.indexOf(',');
+			String option;
+			String value;
+			int intValue;
+			int intOption;
+
+			String comand = readComand.substring(4);
+			int index = comand.indexOf(',');
 
 			if (index != -1) {
 				option = comand.substring(0, index);
@@ -253,10 +269,13 @@ void Task_Read(void* param) {
 			}
 
 			intOption = option.toInt();
-			intValue = value.toInt();
 
 			switch (intOption) {
+
 			case 1:
+
+				intValue = value.toInt();
+
 				if (intValue == 1) {
 					ledDoorActive = true;
 					consoleControl = 1;
@@ -265,9 +284,13 @@ void Task_Read(void* param) {
 					ledDoorActive = false;
 					consoleControl = 2;
 				}
+
 				break;
 
 			case 2:
+
+				intValue = value.toInt();
+
 				if (intValue == 1) {
 					ledWindowActive = true;
 					consoleControl = 3;
@@ -276,6 +299,19 @@ void Task_Read(void* param) {
 					ledWindowActive = false;
 					consoleControl = 4;
 				}
+
+				break;
+
+			case 5:
+
+				user = value;
+
+				break;
+
+			case 6:
+
+				password = value;
+
 				break;
 
 			default:
@@ -298,50 +334,57 @@ void Task_Screen(void* param) {
 	while (1) {
 		// screen
 		lcd.backlight();
-
-		if (screenClock >= 0) {
-			lcd.setCursor(0, 0);
-			lcd.print("Alarme SETR");
-
-			if (alarmStatus == -1) {
-				lcd.setCursor(0, 1);
-				lcd.print("Codigo:");
-			}
-			else if (alarmStatus == 1) {
-				lcd.setCursor(0, 1);
-				lcd.print("Desarmado");
-			}
-			else if (alarmStatus == 0) {
-				lcd.setCursor(0, 1);
-				lcd.print("Armado");
-			}
-			screenClock--;
-		}
-		else {
-			lcd.clear();
-			// relogio
-			if (alarmStatus == -1) {
-
-				alarmStatus = previousAlarmStatus;
-
-				myRTC.updateTime();
-
+		if (displayRefresh != true) {
+			if (screenClock >= 0) {
 				lcd.setCursor(0, 0);
-				lcd.print((String)myRTC.hours + ":" + (String)myRTC.minutes + ":" + (String)myRTC.seconds);
-				lcd.setCursor(0, 1);
-				lcd.print((String)myRTC.dayofmonth + "/" + (String)myRTC.month + "/" + (String)myRTC.year);
+				lcd.print("Alarme SETR");
+
+				if (alarmStatus == -1) {
+					lcd.setCursor(0, 1);
+					lcd.print("Codigo:");
+				}
+				else if (alarmStatus == 1) {
+					lcd.clear();
+					lcd.setCursor(0, 0);
+					lcd.print("Alarme SETR");
+					lcd.setCursor(0, 1);
+					lcd.print("Desarmado");
+				}
+				else if (alarmStatus == 0) {
+					lcd.clear();
+					lcd.setCursor(0, 0);
+					lcd.print("Alarme SETR");
+					lcd.setCursor(0, 1);
+					lcd.print("Armado");
+				}
+				screenClock--;
 			}
 			else {
-				myRTC.updateTime();
+				lcd.clear();
+				// relogio
+				if (alarmStatus == -1) {
 
-				lcd.setCursor(0, 0);
-				lcd.print((String)myRTC.hours + ":" + (String)myRTC.minutes + ":" + (String)myRTC.seconds);
-				lcd.setCursor(0, 1);
-				lcd.print((String)myRTC.dayofmonth + "/" + (String)myRTC.month + "/" + (String)myRTC.year);
+					alarmStatus = previousAlarmStatus;
+
+					myRTC.updateTime();
+
+					lcd.setCursor(0, 0);
+					lcd.print((String)myRTC.hours + ":" + (String)myRTC.minutes + ":" + (String)myRTC.seconds);
+					lcd.setCursor(0, 1);
+					lcd.print((String)myRTC.dayofmonth + "/" + (String)myRTC.month + "/" + (String)myRTC.year);
+				}
+				else {
+					myRTC.updateTime();
+
+					lcd.setCursor(0, 0);
+					lcd.print((String)myRTC.hours + ":" + (String)myRTC.minutes + ":" + (String)myRTC.seconds);
+					lcd.setCursor(0, 1);
+					lcd.print((String)myRTC.dayofmonth + "/" + (String)myRTC.month + "/" + (String)myRTC.year);
+				}
 			}
 		}
 
-		vTaskDelay(500 / portTICK_PERIOD_MS);
+		vTaskDelay(1000 / portTICK_PERIOD_MS);
 	}
 }
 
@@ -455,15 +498,6 @@ void Task_Led(void* param) {
 
 			firePrevious = true;
 		}
-		else {
-			digitalWrite(ledGas, LOW);
-
-			if (firePrevious != false) {
-				Serial.println("FIRE#0");
-			}
-
-			firePrevious = false;
-		}
 
 		// led magnet
 		if (magneticSensorActive == true) {
@@ -542,15 +576,6 @@ void Task_Led_Water(void* param) {
 
 			waterPrevious = true;
 		}
-		else {
-			digitalWrite(ledWater, LOW);
-
-			if (waterPrevious != false) {
-				Serial.println("WATER#0");
-			}
-
-			waterPrevious = false;
-		}
 
 		vTaskDelay(100 / portTICK_PERIOD_MS); // delay
 	}
@@ -570,15 +595,28 @@ void Task_Buzzer(void* param) {
 			// tom do alarme quando dipara
 			if (buzzerStatus == false) {
 				tone(buzzer, 4000);
-				vTaskDelay(150 / portTICK_PERIOD_MS);
+				vTaskDelay(250 / portTICK_PERIOD_MS);
 				noTone(buzzer);
 				buzzerStatus = true;
 			}
 			else {
 				tone(buzzer, 3000);
-				vTaskDelay(150 / portTICK_PERIOD_MS);
+				vTaskDelay(250 / portTICK_PERIOD_MS);
 				noTone(buzzer);
 				buzzerStatus = false;
+			}
+
+			if (buzzerNegative == true) {
+				if (alarmPrevious != true) {
+					Serial.println("OUTBREAK#1");
+					alarmPrevious = true;
+				}
+			}
+			else {
+				if (alarmPrevious != false) {
+					Serial.println("OUTBREAK#0");
+					alarmPrevious = false;
+				}
 			}
 		}
 
@@ -617,6 +655,39 @@ void Task_Buzzer(void* param) {
 			countDown = countDownTime;
 		}
 
+		if (buzzerError == true) {
+			for (int i = 0; i < 500; i++) {
+				tone(buzzer, 3500 + i);
+				vTaskDelay(15 / portTICK_PERIOD_MS);
+			}
+			tone(buzzer, 4000);
+			vTaskDelay(250 / portTICK_PERIOD_MS);
+
+			for (int i = 0; i < 500; i++) {
+				tone(buzzer, 3300 + i);
+				vTaskDelay(10 / portTICK_PERIOD_MS);
+			}
+			tone(buzzer, 3800);
+			vTaskDelay(250 / portTICK_PERIOD_MS);
+
+			for (int i = 0; i < 500; i++) {
+				tone(buzzer, 3100 + i);
+				vTaskDelay(10 / portTICK_PERIOD_MS);
+			}
+			tone(buzzer, 3600);
+			vTaskDelay(250 / portTICK_PERIOD_MS);
+
+			for (int i = 0; i < 500; i++) {
+				tone(buzzer, 2900 + i);
+				vTaskDelay(10 / portTICK_PERIOD_MS);
+			}
+			tone(buzzer, 3400);
+			vTaskDelay(500 / portTICK_PERIOD_MS);
+
+			noTone(buzzer);
+			buzzerError = false;
+		}
+
 		vTaskDelay(150 / portTICK_PERIOD_MS);
 	}
 }
@@ -650,6 +721,23 @@ void Task_Blink_Led_Negative(void* param) {
 			}
 			else {
 				blinkLed = false;
+				digitalWrite(ledBlinkRed, LOW);
+			}
+		}
+
+		if (blinkLedNegativeActive2 == false) {
+			blinkLed2 = false;
+			digitalWrite(ledBlinkRed, LOW);
+		}
+		else {
+
+			if (blinkLed2 == false) {
+				blinkLed2 = true;
+				digitalWrite(ledBlinkRed, HIGH);
+				buzzerNegative = true;
+			}
+			else {
+				blinkLed2 = false;
 				digitalWrite(ledBlinkRed, LOW);
 			}
 		}
@@ -737,7 +825,7 @@ void Task_Gas(void* param) {
 		// le o valor obtido no sensor de gás. é detetado se o valor for low
 		if (digitalRead(GasSensor) == LOW) {
 			if (onOff == false) {
-				blinkLedNegativeActive = true;
+				blinkLedNegativeActive2 = true;
 			}
 			gasSensorActive = true;
 		}
@@ -764,42 +852,98 @@ void Task_Magnet(void* param) {
 				blinkLedNegativeActive = true;
 			}
 			magneticSensorActive = true;
-
-			// janela A
-			if (windowPreviousA != true) {
-				if (digitalRead(MagnetA) == 1 && digitalRead(MagnetB) == 0) {
-					Serial.println("WINDOW#1,0");
-				}
-				windowPreviousA = true;
-			}
-
-			// janela B
-			if (windowPreviousB != true) {
-				if (digitalRead(MagnetA) == 0 && digitalRead(MagnetB) == 1) {
-					Serial.println("WINDOW#0,1");
-				}
-				windowPreviousB = true;
-			}
-
-			// duas janelas
-			if (windowPrevious != true) {
-				if (digitalRead(MagnetA) == 1 && digitalRead(MagnetB) == 1) {
-					Serial.println("WINDOW#1,1");
-				}
-				windowPrevious = true;
-			}
-
 		}
 		else {
 			magneticSensorActive = false;
+		}
 
-			if (windowPreviousA != false || windowPreviousB != false || windowPrevious != false) {
-				if (digitalRead(MagnetA) == 0 && digitalRead(MagnetB) == 0) {
-					Serial.println("WINDOW#0,0");
-				}
+		// janela A
+		if (digitalRead(MagnetA) == 1 && digitalRead(MagnetB) == 0) {
+			if (windowPreviousA != true) {
+				Serial.println("WINDOW#1,0");
+
+				windowPrevious = false;
+				windowPreviousA = true;
+				windowPreviousB = false;
+			}
+		}
+		//janela B
+		else if (digitalRead(MagnetB) == 1 && digitalRead(MagnetA) == 0) {
+			if (windowPreviousB != true) {
+				Serial.println("WINDOW#0,1");
+
+				windowPrevious = false;
+				windowPreviousA = false;
+				windowPreviousB = true;
+			}
+		}
+		//ambas janelas
+		else if (digitalRead(MagnetA) == 1 && digitalRead(MagnetB) == 1) {
+			if (windowPrevious != true) {
+				Serial.println("WINDOW#1,1");
+
+				windowPrevious = true;
 				windowPreviousA = false;
 				windowPreviousB = false;
+			}
+		}
+		else {
+			if (windowPrevious != false) {
+				if (digitalRead(MagnetA) == 0 && digitalRead(MagnetB) == 0) {
+					Serial.println("WINDOW#0,0");
+
+					windowPrevious = false;
+					windowPreviousA = false;
+					windowPreviousB = false;
+				}
+				else if (digitalRead(MagnetA) == 1 && digitalRead(MagnetB) == 0) {
+					Serial.println("WINDOW#1,0");
+
+					windowPrevious = false;
+					windowPreviousA = true;
+					windowPreviousB = false;
+				}
+				else if (digitalRead(MagnetA) == 0 && digitalRead(MagnetB) == 1) {
+					Serial.println("WINDOW#0,1");
+
+					windowPrevious = false;
+					windowPreviousA = false;
+					windowPreviousB = true;
+				}
+			}
+			else if (windowPreviousA != false) {
+				if (digitalRead(MagnetA) == 0 && digitalRead(MagnetB) == 0) {
+					Serial.println("WINDOW#0,0");
+
+					windowPrevious = false;
+					windowPreviousA = false;
+					windowPreviousB = false;
+				}
+			}
+			else if (windowPreviousB != false) {
+				if (digitalRead(MagnetB) == 0 && digitalRead(MagnetA) == 0) {
+					Serial.println("WINDOW#0,0");
+				}
+
 				windowPrevious = false;
+				windowPreviousA = false;
+				windowPreviousB = false;
+			}
+		}
+		if (digitalRead(MagnetC) == 1) {
+			if (doorPrevious != true) {
+				Serial.println("DOOR#1");
+
+				doorPrevious = true;
+			}
+		}
+		else {
+			if (doorPrevious != false) {
+				if (digitalRead(MagnetC) == 0) {
+					Serial.println("DOOR#0");
+
+					doorPrevious = false;
+				}
 			}
 		}
 
@@ -819,21 +963,21 @@ void Task_Water(void* param) {
 		// le o valor detetado pelo sensor para definir qual o nivel de agua que se encontra no presente
 		if (analogRead(WaterSensor) >= 100 && analogRead(WaterSensor) < 500) {
 			if (onOff == false) {
-				blinkLedNegativeActive = true;
+				blinkLedNegativeActive2 = true;
 			}
 			waterLevel = 1;
 			waterSensorActive = true;
 		}
 		else if (analogRead(WaterSensor) >= 500 && analogRead(WaterSensor) < 600) {
 			if (onOff == false) {
-				blinkLedNegativeActive = true;
+				blinkLedNegativeActive2 = true;
 			}
 			waterLevel = 2;
 			waterSensorActive = true;
 		}
 		else if (analogRead(WaterSensor) >= 600) {
 			if (onOff == false) {
-				blinkLedNegativeActive = true;
+				blinkLedNegativeActive2 = true;
 			}
 			waterLevel = 3;
 			waterSensorActive = true;
@@ -855,6 +999,7 @@ void Task_Alarm(void* param) {
 	(void)param;
 
 	int i = 0;
+	int index = -1;
 
 	while (1) {
 		rfidCode = "";
@@ -869,7 +1014,7 @@ void Task_Alarm(void* param) {
 			{
 				rfidCode += rfid522.serNum[i];
 			}
-			Serial.print("CMD#R,");
+			Serial.print("RFID#");
 			Serial.println(rfidCode);
 			screenClock = 30;
 		}
@@ -877,7 +1022,7 @@ void Task_Alarm(void* param) {
 		// escreve no serial monitor a tecla que é primida
 		if (key != NO_KEY) {
 			screenClock = 30;
-			Serial.print("CMD#R,");
+			Serial.print("KEY#");
 			Serial.println(key);
 		}
 
@@ -908,7 +1053,7 @@ void Task_Alarm(void* param) {
 		}
 
 		// guarda o codigo introduzido para verificar se a autehentication pode ser validada
-		if (key == '#' || rfidCode == rfidAdmin || rfidCode == rfidUserA || rfidCode == rfidUserB) {
+		if (RfidCheck(rfidCode)) {
 			alarmStatus = -1; // estado de introdução do codigo
 			lcd.clear();
 			previousAlarmStatus = alarmStatus;
@@ -919,7 +1064,6 @@ void Task_Alarm(void* param) {
 					if (key != '#') {
 						authenticationCode += key;
 						i++;
-						//Serial.print("*");
 						cntDigits++;
 						lcd.setCursor(cntDigits + 8, 1);
 						lcd.print("*");
@@ -930,111 +1074,224 @@ void Task_Alarm(void* param) {
 					}
 				}
 			} while (key != '#');
+			cntDigits = 0;
+		}
+		else if (key == '#' && onOff == false) {
+			alarmStatus = -1; // estado de introdução do codigo
+			lcd.clear();
+			previousAlarmStatus = alarmStatus;
+
+			do {
+				key = my_key_pad.getKey();
+				if (key != NO_KEY) {
+					if (key != '#') {
+						authenticationCode += key;
+						i++;
+						cntDigits++;
+						lcd.setCursor(cntDigits + 8, 1);
+						lcd.print("*");
+
+						if (screenClock <= 0) {
+							break;
+						}
+					}
+				}
+			} while (key != '#');
+			cntDigits = 0;
+			rfidCode = "0000000000";
 		}
 
-		if (authenticationCode != "") {
-			//Serial.println("");
-			//Serial.println(authenticationCode);
+		// verifica dados recebidos da interface
+		if (user != "" && password != "") {
+			index = RfidIndexUser(user);
 
-			// verifica se o codigo se verifica com a tag rfid dependendo do utilizador
-			if (rfidCode == rfidAdmin && authenticationCode == authenticationAdmin) {
-				loginAdmin = true;
-			}
-			else if (rfidCode == rfidAdmin && authenticationCode == authenticationAdminDoor) {
-				loginAdminDoor = true;
-			}
-			else if (rfidCode == rfidAdmin && authenticationCode == authenticationAdminWindow) {
-				loginAdminWindow = true;
-			}
-			else if (rfidCode == rfidUserA && authenticationCode == authenticationUserA) {
-				loginUserA = true;
-			}
-			else if (rfidCode == rfidUserB && authenticationCode == authenticationUserB) {
-				loginUserB = true;
-			}
-			else if (authenticationCode == authenticationAdmin) {
-				loginAdmin = true;
-			}
+			authenticationCode = password;
+			rfidCode = rfids[index];
+		}
 
-			// mostra mensagem dependendo do utilizador
-			if (loginAdmin == true || loginUserA == true || loginUserB == true) {
-				//Serial.println("Authentication successful!");
+		index = RfidIndex(rfidCode);
 
-				// admin
-				if (loginAdmin == true) {
-					//Serial.println("Welcome Admin...");
-					loginAdmin = false;
+		if (index != -1) {
+
+			if (authenticationCode != "") {
+
+				// verifica se o codigo se verifica com a tag rfid dependendo do utilizador
+				if (rfids[index] == rfidCode && authenticationCode == passwords[index]) {
+
+					if (users[index] == "Admin") {
+						loginAdmin = true;
+						loginAdminDoor = true;
+						loginAdminWindow = true;
+					}
+					else if (users[index] == "SOS") {
+						loginSOS = true;
+					}
+					else {
+						loginUser = true;
+					}
+
+					buzzerError = false;
 				}
 
-				// user xavita
-				if (loginUserA == true) {
-					//Serial.println("Welcome Xavita...");
-					loginUserA = false;
-				}
+				// mostra mensagem dependendo do utilizador
+				if (loginAdmin == true || loginUser == true || loginSOS == true) {
 
-				// user guelhas
-				if (loginUserB == true) {
-					//Serial.println("Welcome Guelhas...");
-					loginUserB = false;
-				}
+					// desativa alarme
+					blinkLedNegativeActive = false;
+					blinkLedNegativeActive2 = false;
+					buzzerPositive = true;
+					buzzerNegative = false;
+					buzzerStatus = false;
 
-				// desativa alarme
-				blinkLedNegativeActive = false;
-				buzzerPositive = true;
-				buzzerNegative = false;
-				buzzerStatus = false;
-				cntDigits = 0;
+					if (waterSensorActive == false) {
+						digitalWrite(ledWater, LOW);
 
-				// altera o estado da viariavel onOff para verificar se o estadoanterior era armado ou desarmado.
-				if (onOff == true) {
-					onOff = false;
-					presence = true;
-					alarmStatus = 0;
-					Serial.println("ALARM#0");
+						if (waterPrevious != false) {
+							Serial.println("WATER#0");
+						}
+
+						waterPrevious = false;
+					}
+
+					if (gasSensorActive == false) {
+						digitalWrite(ledGas, LOW);
+
+						if (firePrevious != false) {
+							Serial.println("FIRE#0");
+						}
+
+						firePrevious = false;
+					}
+
+					// altera o estado da viariavel onOff para verificar se o estado anterior era armado ou desarmado.
+					if (onOff == true) {
+						onOff = false;
+						presence = true;
+						alarmStatus = 0;
+						Serial.println("ALARM#0");
+						lcd.clear();
+					}
+					else {
+						onOff = true;
+						presence = false;
+						alarmStatus = 1;
+						Serial.println("ALARM#1");
+						lcd.clear();
+					}
+
+					displayRefresh = true;
 					lcd.clear();
+
+					// admin
+					if (loginAdmin == true) {
+						lcd.setCursor(0, 0);
+						lcd.print("Administrador:");
+						lcd.setCursor(0, 1);
+						lcd.print(users[index]);
+						vTaskDelay(2000 / portTICK_PERIOD_MS);
+						loginAdmin = false;
+					}
+
+					// user xavita
+					if (loginUser == true) {
+						lcd.clear();
+						lcd.setCursor(0, 0);
+						lcd.print("Utilizador:");
+						lcd.setCursor(0, 1);
+						lcd.print(users[index]);
+						vTaskDelay(2000 / portTICK_PERIOD_MS);
+						loginUser = false;
+					}
+
+					// SOS
+					if (loginSOS == true) {
+						lcd.clear();
+						lcd.setCursor(0, 0);
+						lcd.print("Emergencia:");
+						lcd.setCursor(0, 1);
+						lcd.print(users[index]);
+						vTaskDelay(2000 / portTICK_PERIOD_MS);
+						loginSOS = false;
+					}
+					displayRefresh = false;
+
+					codeError = codeErrorAttempts;
 				}
+
+				// authentication fail
 				else {
-					onOff = true;
-					presence = false;
-					alarmStatus = 1;
-					Serial.println("ALARM#1");
-					lcd.clear();
+					buzzerError = true;
+					// status do alarme, armado ou desarmado.
+					if (onOff == true)
+					{
+						alarmStatus = 1;
+					}
+					else
+					{
+						alarmStatus = 0;
+					}
+
+					// numero máximo de tentativas possiveis. caso contrario, o alarme dispara e fica armado.
+					if (codeError > (codeErrorAttempts - (codeErrorAttempts - 1))) {
+						codeError--;
+					}
+					else {
+						buzzerNegative = true;
+						alarmStatus = 0;
+						onOff = false;
+					}
 				}
 
-				codeError = codeErrorAttempts;
+				authenticationCode = ""; // reset à variavel onde guarda a pass introduzida
+				user = "";
+				password = "";
+				rfidCode = "";
 			}
-
-			// authentication fail
-			else {
-				//Serial.println("Authentication unsuccessful!");
-
-				// status do alarme, armado ou desarmado.
-				if (onOff == true)
-				{
-					alarmStatus = 1;
-				}
-				else
-				{
-					alarmStatus = 0;
-				}
-
-				// numero máximo de tentativas possiveis. caso contrario, o alarme dispara e fica armado.
-				if (codeError > (codeErrorAttempts - (codeErrorAttempts - 1))) {
-					codeError--;
-				}
-				else {
-					buzzerNegative = true;
-					alarmStatus = 0;
-					onOff = false;
-				}
-			}
-
-			authenticationCode = ""; // reset à variavel onde guarda a pass introduzida
 		}
 
 		vTaskDelay(100 / portTICK_PERIOD_MS); // delay
 		key = NO_KEY; // sem teclas primidas
 	}
+}
+
+#pragma endregion
+
+#pragma region Funções
+
+bool RfidCheck(String value) {
+
+	for (int i = 0; i < SIZE; i++) {
+		if (rfids[i] != "") {
+			if (value == rfids[i]) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+int RfidIndex(String value) {
+
+	for (int i = 0; i < SIZE; i++) {
+		if (rfids[i] != "") {
+			if (value == rfids[i]) {
+				return i;
+			}
+		}
+	}
+	return -1;
+}
+
+int RfidIndexUser(String value) {
+
+	for (int i = 0; i < SIZE; i++) {
+		if (users[i] != "") {
+			if (value == users[i]) {
+				return i;
+			}
+		}
+	}
+	return -1;
 }
 
 #pragma endregion
